@@ -1,2 +1,2 @@
-# RNAseq_analysis
-for analyzing large RNAseq remotely
+# RNAseq
+for RNA seq analysis
