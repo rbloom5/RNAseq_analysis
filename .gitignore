@@ -1,6 +1,9 @@
+data/
+gene_lists/
 *.DS_Store
 *.txt
-ipynb_checkpoints
+.ipynb_checkpoints
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
