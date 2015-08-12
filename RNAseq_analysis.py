@@ -5,6 +5,7 @@ import webbrowser
 import multiprocessing
 import HTSeq
 import collections
+import sys
 
 # object for RNA seq cleaning and analysis
 
@@ -76,6 +77,31 @@ def split_barcodes(i, barcode_file, output_prefix,file_dir):
 	keep_files = trim_barcodes(barcode_file, keep_files, output_prefix, file_dir)
 
 
+def get_genome_files(genome):
+	if genome == 'Ensembl':
+		genome_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Sequence/Bowtie2Index/genome'
+		gtf_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Annotation/Genes/genes.gtf'
+		gtf_index = '/home/ubuntu/genomes/current_annotations/Ensemble/Ensemble_annotations'
+
+	elif genome == 'UCSC':
+		genome_loc = '/home/ubuntu/genomes/UCSC/hg19/Sequence/Bowtie2Index/genome'
+		gtf_loc = '/home/ubuntu/genomes/UCSC/hg19/Annotation/Genes/genes.gtf'
+		gtf_index = '/home/ubuntu/genomes/current_annotations/UCSC/UCSC_annotations'
+
+	elif genome == 'NCBI':
+		genome_loc = '/home/ubuntu/genomes/NCBI/build37.2/Sequence/Bowtie2Index/genome'
+		gtf_loc = '/home/ubuntu/genomes/NCBI/build37.2/Annotation/Genes/genes.gtf'
+		gtf_index = '/home/ubuntu/genomes/current_annotations/NCBI/NCBI_annotations'
+
+	elif genome == 'miRNA':
+		genome_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Sequence/Bowtie2Index/genome'
+		gtf_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Annotation/SmallRNA/mature.fa'
+		gtf_index = '/home/ubuntu/genomes/current_annotations/miRNA/miRNA_annotations'
+
+	return genome_loc, gtf_loc, gtf_index
+
+
+
 
 
 def HTseq_count(bam_file, gtf_file, out_dir, identifier, parallel = True ):
@@ -92,7 +118,7 @@ def HTseq_count(bam_file, gtf_file, out_dir, identifier, parallel = True ):
 	almnt_file = HTSeq.SAM_Reader(bam_file)
 	counts = collections.Counter( )
 	for bundle in HTSeq.pair_SAM_alignments( almnt_file, bundle=True ):
-		if len(bundle) != 1
+		if len(bundle) != 1:
 			continue  # Skip multiple alignments
 		first_almnt, second_almnt = bundle[0]  # extract pair
 		if not first_almnt.aligned and second_almnt.aligned:
@@ -134,7 +160,7 @@ class RNAseq:
 		self.file_locations = [prefix+f for f in files]
 		self.ids = [f.split('.')[0] for f in files]
 
-	def clean_split_seqs(self, output_prefix='', barcode_file=None, min_len=15, qual_score=20, aws=True):
+	def clean_split_seqs(self, output_prefix='', barcode_file=None, min_len=13, qual_score=15, aws=True):
 		# gets rid of low quality sequences and converts to FASTA, puts into clean-rna-seq
 
 		# a list of the file ids that comes out of the splitting
@@ -148,10 +174,15 @@ class RNAseq:
 			i = f.split('/')[-1].split('.')[0]
 			f_tail = f.split('/')[-1]
 
+
 			if aws:
 				#if aws, need to copy files from s3 to ec2 first
 				print "copying %s from s3"%f
 				os.system('aws s3 cp %s temp_seqs/'%f)
+
+				if f_tail[-3:]=='.gz':
+					os.system('gunzip temp_seqs/%s'%f_tail)
+					f_tail = f_tail[:-3]
 				
 				print "removing sequences that are too short"
 				bash('fastx_clipper -i temp_seqs/%s -o temp_seqs/%s-len.fastq -l %s'%(f_tail,i,min_len))
@@ -172,10 +203,10 @@ class RNAseq:
 			else:
 				# if no barcodes, just copy back the 
 				keep_files = [f for f in os.listdir('temp_seqs') if f.endswith('-len-q.fastq')]
-				for kf in keep_files:
-					os.system('fastx_trimmer -f %s -i %s -o %s'%(13,'temp_seqs/'+kf, 'temp_seqs/'+kf[:-6]+'-t.fastq'))
+				# for kf in keep_files:
+				# 	os.system('fastx_trimmer -f %s -i %s -o %s'%(13,'temp_seqs/'+kf, 'temp_seqs/'+kf[:-6]+'-t.fastq'))
 
-				keep_files = [f for f in os.listdir('temp_seqs') if f.endswith('-len-q-t.fastq')]
+				# keep_files = [f for f in os.listdir('temp_seqs') if f.endswith('-len-q-t.fastq')]
 
 
 
@@ -197,142 +228,138 @@ class RNAseq:
 			for f in keep_files:
 				self.ids.append(f.split('.')[0])
 
+			sys.stdout.flush()
 
-	def map_reads(self, genome='hg19', coverage_search=False):
-		if genome == 'Ensembl':
-			genome_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/Ensemble/Ensemble_annotations'
 
-		elif genome == 'UCSC':
-			genome_loc = '/home/ubuntu/genomes/UCSC/hg19/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/UCSC/hg19/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/UCSC/UCSC_annotations'
-
-		elif genome == 'NCBI':
-			genome_loc = '/home/ubuntu/genomes/NCBI/build37.2/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/NCBI/build37.2/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/NCBI/NCBI_annotations'
-
-		elif genome == 'miRNA':
-			genome_loc = '/home/ubuntu/genomes/Homo_sapiens/NCBI/build37.2/Annotation/SmallRNA/hairpin.fa'
-			gtf_loc = '/home/ubuntu/genomes/Homo_sapiens/NCBI/build37.2/Annotation/SmallRNA/mirs.gff'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/miRNA/miRNA_hairpin_annotations'
+	def map_reads(self, genome='hg19', coverage_search=False, paired_end=False):
+		self.genome=genome
+		genome_loc, gtf_loc, gtf_index = get_genome_files(genome)
 
 			
-
 		for i in self.ids:
 			make_temp_seqs()
 			print "copying %s from s3"%(i+'.fastq')
-			copy_from_s3([i+'_1.fastq',i+'_2.fastq'],'temp_seqs','clean-seq-files')
+			if paired_end:
+				copy_from_s3([i+'_1.fastq',i+'_2.fastq'],'temp_seqs','clean-seq-files')
+			else:
+				copy_from_s3([i+'.fastq'],'temp_seqs','clean-seq-files')
 			num_cores = multiprocessing.cpu_count()
 
 			print "running tophat on %s cores"%num_cores
 
-			tophat_string = 'tophat2 -p %s --no-coverage-search -G %s --transcriptome-index %s --no-novel-juncs %s %s %s'%\
+			if paired_end:
+				tophat_string = 'tophat2 -p %s --no-coverage-search -G %s --transcriptome-index %s --no-novel-juncs %s %s %s'%\
 								(num_cores,gtf_loc,gtf_index,genome_loc,'temp_seqs/'+i+'_1.fastq','temp_seqs/'+i+'_2.fastq')
+			else:
+				tophat_string = 'tophat2 -p %s --no-coverage-search -G %s --transcriptome-index %s --no-novel-juncs %s %s '%\
+								(num_cores,gtf_loc,gtf_index,genome_loc,'temp_seqs/'+i+'.fastq')				
 
 			print tophat_string
 			bash(tophat_string)
 
 			#rename and move output from tophat to s3
-			os.system('mv tophat_out/accepted_hits.bam ~/tophat_out/%s'%(i+'.bam'))
-			os.system('mv tophat_out/align_summary.txt ~/tophat_out/%s'%(i+'_align_summary.txt'))
+			new_i = i+'_' + genome
+			os.system('mv tophat_out/accepted_hits.bam ~/tophat_out/%s'%(new_i+ '.bam'))
+			os.system('mv tophat_out/align_summary.txt ~/tophat_out/%s'%(new_i+'_align_summary.txt'))
 
 			#index the bam file for IGV viewing
-			sam_index('~/tophat_out/%s'%(i+'.bam'), outdir='tophat_out')
+			sam_index('~/tophat_out/%s'%(new_i+'.bam'), outdir='tophat_out')
 
 			#copy to s3
-			copy_to_s3([i+'.bam',i+'_align_summary.txt', i+'.bam.bai'], 'tophat_out', 'bam-files')
+			copy_to_s3([new_i+'.bam',new_i+'_align_summary.txt', new_i+'.bam.bai'], 'tophat_out', 'bam-files')
 
 			os.system('rm -r tophat_out/*')
+
+			sys.stdout.flush()
 
 		os.system('rm -r temp_seqs')
 
 
-	def run_cufflinks(self, genome='Ensembl'):
-		if genome == 'Ensembl':
-			genome_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/Ensemble/Ensemble_annotations'
 
-		elif genome == 'UCSC':
-			genome_loc = '/home/ubuntu/genomes/UCSC/hg19/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/UCSC/hg19/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/UCSC/UCSC_annotations'
 
-		elif genome == 'NCBI':
-			genome_loc = '/home/ubuntu/genomes/NCBI/build37.2/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/NCBI/build37.2/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/NCBI/NCBI_annotations'
+	def map_reads_shrimp(self, genome='miRNA', coverage_search=False, paired_end=False):
+		self.genome=genome
+			
+		for i in self.ids:
+			make_temp_seqs()
 
-		elif genome == 'miRNA':
-			genome_loc = '/home/ubuntu/genomes/Homo_sapiens/NCBI/build37.2/Annotation/SmallRNA/hairpin.fa'
-			gtf_loc = '/home/ubuntu/genomes/Homo_sapiens/NCBI/build37.2/Annotation/SmallRNA/mirs.gff'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/miRNA/miRNA_hairpin_annotations'
+			print "copying %s from s3"%(i+'.fastq')
+			copy_from_s3([i+'.fastq'],'temp_seqs','clean-seq-files')
+			num_cores = multiprocessing.cpu_count()
+
+			#convert to fasta and run Shrimp aligner
+			bash('fastq_to_fasta -i temp_seqs/%s -o temp_seqs/%s'%(i+'.fastq',i+'.fasta'))
+			print "running shrimp on %s cores"%num_cores
+			shrimp_string = 'SHRiMP_2_2_3/bin/gmapper-ls -L miRNA_db/mature-ls temp_seqs/%s -M mirna -N %s -n 1 -U -o 2 -F -h 50%% >temp_seqs/%s'%(i+'.fasta',num_cores,i+'_miRNA.sam')			
+			print shrimp_string
+			os.system(shrimp_string)
+
+			#rename and move output from tophat to s3
+			new_i = i+'_miRNA.sam'
+			copy_to_s3([new_i], 'temp_seqs', 'bam-files')
+			sys.stdout.flush()
+
+		os.system('rm -r temp_seqs')
+
+
+
+
+	def run_cufflinks(self, genome=''):
+		if not genome:
+			genome = self.genome
+		genome_loc, gtf_loc, gtf_index = get_genome_files(genome)
 
 		for i in self.ids:
 			make_temp_seqs()
 			print "copying %s from s3"%(i+'.bam')
-			copy_from_s3(i+'.bam','temp_seqs','bam-files')
+			copy_from_s3(i+'_'+genome+ '.bam','temp_seqs','bam-files')
 			num_cores = multiprocessing.cpu_count()
 
 			# run cufflinks to count reads and estimate gene expression
 			bash('cufflinks -p %s -N -G %s -u --compatible-hits-norm temp_seqs/%s'\
-				%(num_cores, gtf_loc, i+'.bam'))
+				%(num_cores, gtf_loc, i+'_'+genome+ '.bam'))
 			# bash('cufflinks -p %s temp_seqs/%s'\
 			# 	%(num_cores, i+'.bam'))
-
-			os.system('mv genes.fpkm_tracking %s_genes.fpkm_tracking'%i)
-			os.system('mv isoforms.fpkm_tracking %s_isoforms.fpkm_tracking'%i)
-			os.system('mv transcripts.gtf %s_transcripts.gtf'%i)
-			os.system('mv skipped.gtf %s_skipped.gtf'%i)
+ 			new_i = i+'_'+genome
+			os.system('mv genes.fpkm_tracking %s_genes.fpkm_tracking'%new_i)
+			os.system('mv isoforms.fpkm_tracking %s_isoforms.fpkm_tracking'%new_i)
+			os.system('mv transcripts.gtf %s_transcripts.gtf'%new_i)
+			os.system('mv skipped.gtf %s_skipped.gtf'%new_i)
 
 			print "copying output to s3"
-			copy_to_s3(['%s_genes.fpkm_tracking'%i, '%s_isoforms.fpkm_tracking'%i,'%s_transcripts.gtf'%i,'%s_skipped.gtf'%i],\
+			copy_to_s3(['%s_genes.fpkm_tracking'%new_i, '%s_isoforms.fpkm_tracking'%new_i,'%s_transcripts.gtf'%new_i,'%s_skipped.gtf'%new_i],\
 				     	'.','cufflinks-out')
 
-			for i in ['%s_genes.fpkm_tracking'%i, '%s_isoforms.fpkm_tracking'%i,'%s_transcripts.gtf'%i,'%s_skipped.gtf'%i]:
+			for i in ['%s_genes.fpkm_tracking'%new_i, '%s_isoforms.fpkm_tracking'%new_i,'%s_transcripts.gtf'%new_i,'%s_skipped.gtf'%new_i]:
 				os.system('rm %s'%i)
+
+			sys.stdout.flush()
+
 		os.system('rm -r temp_seqs')
 
 
 
-	def run_HTseq(self, genome='Ensembl'):
-		if genome == 'Ensembl':
-			genome_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/Ensembl/GRCh37/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/Ensemble/Ensemble_annotations'
+	def run_HTseq(self, genome=''):
+		if not genome:
+			genome = self.genome
 
-		elif genome == 'UCSC':
-			genome_loc = '/home/ubuntu/genomes/UCSC/hg19/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/UCSC/hg19/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/UCSC/UCSC_annotations'
-
-		elif genome == 'NCBI':
-			genome_loc = '/home/ubuntu/genomes/NCBI/build37.2/Sequence/Bowtie2Index/genome'
-			gtf_loc = '/home/ubuntu/genomes/NCBI/build37.2/Annotation/Genes/genes.gtf'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/NCBI/NCBI_annotations'
-
-		elif genome == 'miRNA':
-			genome_loc = '/home/ubuntu/genomes/Homo_sapiens/NCBI/build37.2/Annotation/SmallRNA/hairpin.fa'
-			gtf_loc = '/home/ubuntu/genomes/Homo_sapiens/NCBI/build37.2/Annotation/SmallRNA/mirs.gff'
-			gtf_index = '/home/ubuntu/genomes/current_annotations/miRNA/miRNA_hairpin_annotations'
+		genome_loc, gtf_loc, gtf_index = get_genome_files(genome)
 
 		for i in self.ids:
+			new_i = i+'_'+genome
 			make_temp_seqs()
 			print "copying %s from s3"%(i+'.bam')
-			copy_from_s3(i+'.bam','temp_seqs','bam-files')
+			copy_from_s3(new_i+'.bam','temp_seqs','bam-files')
 
-			counts = HTseq_count('temp_seqs/'+i+'.bam', gtf_loc, 'temp_seqs', 'transcript_id')
+			counts = HTseq_count('temp_seqs/'+new_i+'.bam', gtf_loc, 'temp_seqs', 'transcript_id')
 
 			with open('%s_HTseq_counts.txt'%i,'w') as f:
 				for c in counts:
 					f.write('%s\t%s\n'%(c, counts[c]))
 
-			copy_to_s3('%s_HTseq_counts.txt'%i,'.','htseq-out')
-			os.system('rm %s_HTseq_counts.txt'%i)
-			os.system('rm temp_seqs/%s.bam'%i)
+			copy_to_s3('%s_HTseq_counts.txt'%new_i,'.','htseq-out')
+			os.system('rm %s_HTseq_counts.txt'%new_i)
+			os.system('rm temp_seqs/%s.bam'%new_i)
 
 
 

@@ -1,4 +1,5 @@
-
+deconvolution/
+*.gene_info
 gene_lists/
 *.DS_Store
 *.txt
